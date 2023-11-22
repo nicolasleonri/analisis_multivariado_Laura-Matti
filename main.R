@@ -1,9 +1,14 @@
-#install.packages("readxl")
-#install.packages("ggplot2")
-#install.packages("tidyverse")
-
+install.packages("readxl")
 library(readxl)
+install.packages('naivebayes')
+library(naivebayes)
+install.packages('dplyr')
+library(dplyr)
+install.packages('ggplot2')
 library(ggplot2)
+install.packages('psych')
+library(psych)
+
 df <- read_excel("data/distance.dataset.xlsx", sheet=1, col_names = TRUE, col_types = c("numeric", "text", "text", "numeric"))
 df$structure <- gsub("\\r\\n", "", df$structure)
 
@@ -109,7 +114,7 @@ two_tailed_t_test <- function(type1, type2) {
 two_tailed_t_test("overt connective", "juxtaposition") #Not significantly different. But not statistically signifcant.
 two_tailed_t_test("overt connective", "elliptical") #significantly different
 two_tailed_t_test("juxtaposition", "elliptical")  #significantly different
-a
+
 #### Visualization: ####
 ggplot(df, aes(x = distance, y = structure)) +
   geom_point() +
@@ -119,7 +124,7 @@ ggplot(df, aes(x = distance, y = structure)) +
 #### Regression model ####
 test <- transform(df, postFac=cut(distance,
         breaks=c(-Inf, median(distance), Inf),
-        labels=c("lo", "hi")))
+        labels=c("si", "no")))
 
 #test$postFac[test$structure=='overt connective']
 #test$distance <- test$distance + 1 
@@ -138,14 +143,7 @@ exp(confint(glmFit))
 #### Naive Bayes classification ####
 #### https://www.r-bloggers.com/2021/04/naive-bayes-classification-in-r/
 
-#install.packages('naivebayes')
-library(naivebayes)
-#install.packages('dplyr')
-library(dplyr)
-#install.packages('ggplot2')
-library(ggplot2)
-#install.packages('psych')
-library(psych)
+
 
 test2 <- df
 head(test2)
