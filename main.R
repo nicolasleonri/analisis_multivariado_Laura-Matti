@@ -183,4 +183,3 @@ p2 <- predict(model, test)
 (tab2 <- table(p2, test$structure))
 1 - sum(diag(tab2)) / sum(tab2)
 
-
