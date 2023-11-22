@@ -1,12 +1,12 @@
-install.packages("readxl")
+#install.packages("readxl")
 library(readxl)
-install.packages('naivebayes')
+#install.packages('naivebayes')
 library(naivebayes)
-install.packages('dplyr')
+#install.packages('dplyr')
 library(dplyr)
-install.packages('ggplot2')
+#install.packages('ggplot2')
 library(ggplot2)
-install.packages('psych')
+#install.packages('psych')
 library(psych)
 
 df <- read_excel("data/distance.dataset.xlsx", sheet=1, col_names = TRUE, col_types = c("numeric", "text", "text", "numeric"))
@@ -143,8 +143,6 @@ exp(confint(glmFit))
 #### Naive Bayes classification ####
 #### https://www.r-bloggers.com/2021/04/naive-bayes-classification-in-r/
 
-
-
 test2 <- df
 head(test2)
 test2 <- test2[1:2]
@@ -180,4 +178,12 @@ p1 <- predict(model, train)
 p2 <- predict(model, test)
 (tab2 <- table(p2, test$structure))
 1 - sum(diag(tab2)) / sum(tab2)
+
+length(p[,2])
+length(seq(1, length(p[,2])))
+
+df_prediction <- data.frame(seq(1, length(p[,2])), p[,2])
+colnames(df_prediction) <- c("distance", "probability")
+
+plot(df_prediction)
 
