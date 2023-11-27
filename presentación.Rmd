@@ -1,0 +1,308 @@
+---
+title: "Análisis estadístico para Laura y Matti"
+author: "Nicolás León"
+date: "2023-11-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Estadística descriptiva
+
+En primer lugar, conviene hacer una revisión de los datos disponibles para entender mejor qué podemos hacer y qué no. Primero leemos la información y la formateamos correctamente:
+
+```{r}
+library(readxl)
+
+df <- read_excel("./data/distance.dataset.xlsx", sheet=1, col_names = TRUE, col_types = c("numeric", "text", "text", "numeric"))
+
+df$structure <- gsub("\\r\\n", "", df$structure)
+```
+
+Y usamos esta función para revisar el contenido:
+
+```{r}
+descriptive_stats <- function(type) {
+  if(missing(type)) {
+    input <- df$distance
+  }else{
+    input <- df$distance[df$structure==type]
+  }
+  
+  output <- c(
+  paste("mean:", mean(input)),
+  paste("median:", median(input)),
+  paste("standard deviation", sd(input)),
+  paste("IQR:", IQR(input)),
+  paste("Min:", min(input)),
+  paste("Max:", max(input))
+  )
+  
+  print(output)
+  print(quantile(input))
+}
+```
+
+Respecto a toda la data, encontramos esto:
+
+```{r}
+descriptive_stats()
+```
+
+Así como la siguiente información sobre las tres categorías que queremos analizar:
+
+```{r}
+descriptive_stats("overt connective")
+descriptive_stats("juxtaposition")
+descriptive_stats("elliptical")
+```
+
+Como podemos observar hay dos cosas importantes a considerar:
+
+1.  Solo tenemos una columna numérica y otra columna categoríca. Esto imposibilita la regresión lineal planteada en un inicio. Asimismo, imposibilita un análisis multivariado, ya que solo tenemos información categórica.
+2.  Las categorías **over connective** y **juxtaposition** tienen características parecidas, aunque con rangos distintos. El caso de **elliptical** es signficativamente distinto a ambos, tanto en su promedio, como en su rango.
+
+Debido al parecido entre las dos primeras categorías, conviene hacer un *t-Test* con el objetivo de saber si es que son los suficientemente distintas.
+
+```{r}
+two_tailed_t_test <- function(type1, type2) {
+  input <- df[df$structure%in% c(type1, type2),]
+  return(t.test(distance~structure, data = input))
+}
+
+two_tailed_t_test("overt connective", "juxtaposition") #Not significantly different. But not statistically signifcant.
+two_tailed_t_test("overt connective", "elliptical") #significantly different
+two_tailed_t_test("juxtaposition", "elliptical")  #significantly different
+```
+
+Aunque pareciera lo contrario, el hecho que el primer resultado no sea estadísticamente significativo (con un p-value \> 0,05) confirma que no se puede afirmar que ambas categorías no son lo suficientemente iguales como para tener las mismas características. Es decir: aunque no se puede confirmar que sean lo suficientemente distintos, tampoco se puede afirmar que sean demasiado parecidas. Además, ambas son significativamente diferentes a **elliptical**.
+
+En ese sentido, se me ocurrió que se podría hacer una regresión logística que -a diferencia de una regresión lineal- sí se puede hacer con datos categóricos (ver Wollschläger 2017: 308-319).
+
+## 2. Regresión logística
+
+```{r}
+logreg <- transform(df, probability=cut(distance,
+        breaks=c(-Inf, median(distance), Inf),
+        labels=c("Sí", "No")
+        ))
+```
+
+Este análisis es útil (y en mi opinión, el único adecuado) porque permite predecir el resultado de una variable categórica (una variable que puede adoptar un número limitado de categorías) en función de las variables independientes o predictoras. En este caso, estaríamos calculando qué tan probable es cada variable respecto a los valores númericos (distancias).
+
+```{r}
+cdplot(probability ~ distance, data=logreg, subset=structure == "juxtaposition",
+       main="Probabilidades estimadas de la categoría 'Juxtaposition'")
+```
+
+Veamos el caso de las otras categorías:
+
+```{r}
+cdplot(probability ~ distance, data=logreg, subset=structure == "overt connective",
+       main="Probabilidades estimadas de la categoría 'Overt connective'")
+```
+
+```{r}
+cdplot(probability ~ distance, data=logreg, subset=structure == "elliptical",
+       main="Probabilidades estimadas de la categoría 'Elliptical'")
+```
+
+Como podemos notar, el análisis funciona bien, a excepción de la categoría **elliptical** que -por su propia naturaleza- es difícil de predecir. De hecho, esto lo podemos notar si comparamos los histogramas de densidad de cada categoría:
+
+```{r}
+density_histogram <- function(type) {
+  if(missing(type)) {
+    input <- df$distance
+    text <- paste("Density of all structures")
+  } else {
+    input <- df$distance[df$structure==type]
+    text <- paste("Density of structure", type)
+  }
+  hist(input,
+       freq = FALSE,
+       col = "green",
+       breaks = seq(0, length(input), by = 5),
+       #xlim = c(0, length(input)/5),
+       xlab = text,
+       main=NULL)
+  lines(density(input))
+}
+
+par(mfrow=c(2,2))
+density_histogram()
+density_histogram("overt connective")
+density_histogram("juxtaposition")
+density_histogram("elliptical")
+```
+
+En el caso de la categoría **elliptical**, su densidad está demasiada concentrada alrededor de la distancia 0. Por esta razón, no parece ser posible que el análisis logístico funcione en su caso. Debido a esto, el modelo no converge, como usualmente hace.
+
+```{r}
+(glmFit <- glm(probability ~ distance + structure, family=binomial(link="logit"),
+               data=logreg))
+```
+
+A estas alturas, la solución más simple sería eliminar la categoría **elliptical** e intentarlo únicamente con las otras dos. Sin embargo, se me ocurrió que podríamos aplicar un modelo *naive bayes* común en *machine learning*.
+
+## 3. *Naive bayes*
+
+Como no podemos aplicar la regresión logística, esta sería una alternativa interesante. Por suerte, tenemos suficientes datos para hacer este análisis. Además, lo mejor de este modelo es que considera cada variable predictoria como independiente, es decir asume que la presencia o ausencia de una característica particular no está relacionada con la presencia o ausencia de cualquier otra característica, dada la variable. Frente al fracaso de los otros modelos, esta es nuestra mejor opción.
+
+Primero preparamos nuestros datos.
+
+```{r}
+nb <- df[1:2]
+nb$structure <- as.factor(nb$structure)
+nb$distance <- as.factor(nb$distance)
+```
+
+Después procedemos a dividir nuestra data entre la información que usaremos para entrenar al modelo y la que usaremos para probar qué tan eficiente es.
+
+```{r}
+set.seed(1234)
+ind <- sample(2, nrow(nb), replace = T, prob = c(0.8, 0.2))
+train <- nb[ind == 1,]
+test <- nb[ind == 2,]
+```
+
+Nos queda entonces entrenar nuestro modelo y ver los resultados.
+
+```{r}
+library(naivebayes)
+
+model <- naive_bayes(structure ~ ., data = train, laplace = 1, usekernel = TRUE) 
+plot(model) 
+```
+
+Después podemos proceder a hacer nuestras predicciones que utilizaremos para verificar la eficiencia del modelo.
+
+```{r}
+p <- predict(model, test)
+(tab <- table(p, test$structure))
+sum(diag(tab)) / sum(tab) # El modelo tiene un 64,85149% de efectividad en la prueba
+```
+
+Alrededor de un 65% de efectividad en la data de prueba.
+
+Con el objetivo de mejorar el modelo, necesitamos definir cuál variable **k** nos ayuda a maximizar nuestra efectividad. Esta variable se utiliza para el *smoothing* del modelo.
+
+```{r}
+# Para mejorar el modelo, es una buena idea intentar encontrar la variable k donde se maximice la efectividad:
+best_laplace <- 0
+best_accuracy <- 0
+
+# Probamos con distintos números
+for (laplace_value in seq(0, 5, by = 0.1)) {
+  print(laplace_value)
+  model <- naive_bayes(structure ~ ., data = train, laplace = laplace_value, usekernel = TRUE)
+  p <- predict(model, test)
+  (tab <- table(p, test$structure))
+  accuracy <- sum(diag(tab)) / sum(tab)
+  
+  if (accuracy > best_accuracy) {
+    best_accuracy <- accuracy
+    best_laplace <- laplace_value
+  }
+}
+
+# Hasta obtener el modelo donde se maximice la efectividad
+final_model <- naive_bayes(structure ~ ., data = train, laplace = best_laplace, usekernel = TRUE)
+
+# Y observar su efectividad
+p <- predict(final_model, test)
+(tab <- table(p, test$structure))
+sum(diag(tab)) / sum(tab) # Alcanzando un 65,84158% con k = 0,1
+```
+
+El resultado es que nuestro modelo es más óptimo cuando **k=0,1**. Procedemos a normalizar y hacer un par de gráficos.
+
+```{r}
+winsorize_and_plot <- function(input_df) {
+  # Primero normalizamos la información
+  winsorize <- function(x, trim = 0.15) {
+    q <- quantile(x, c(trim, 1 - trim), na.rm = TRUE)
+    x[x < q[1]] <- q[1]
+    x[x > q[2]] <- q[2]
+    x[x < 0] <- 0
+    x[x > 1] <- 1
+    return(x)
+  }
+  
+  # Y generamos el data frame y las visualizaciones
+  df_prediction <- input_df
+  df_prediction$probability <- winsorize(df_prediction$probability)
+  plot(df_prediction)
+  lm_model <- lm(df_prediction$probability ~ df_prediction$distance)
+  abline(lm_model, col = "blue")
+  return(df_prediction)
+}
+```
+
+Primero para la categoría **elliptical**:
+
+```{r}
+p <- predict(final_model, train, type = 'prob')
+df_prediction <- data.frame(seq(1, length(p[, 1][1:100])), p[, 1][1:100])
+colnames(df_prediction) <- c("distance", "probability")
+winsorized_df <- winsorize_and_plot(df_prediction)
+```
+
+Y para **juxtaposition**:
+
+```{r}
+p <- predict(final_model, train, type = 'prob')
+df_prediction <- data.frame(seq(1, length(p[, 2][1:100])), p[, 2][1:100])
+colnames(df_prediction) <- c("distance", "probability")
+winsorized_df <- winsorize_and_plot(df_prediction)
+```
+
+Por último para **overt connective**:
+
+```{r}
+p <- predict(final_model, train, type = 'prob')
+df_prediction <- data.frame(seq(1, length(p[, 3][1:100])), p[, 3][1:100])
+colnames(df_prediction) <- c("distance", "probability")
+winsorized_df <- winsorize_and_plot(df_prediction)
+```
+
+Ahora que tenemos dos datos númericos, sí podemos hacer regresiones lineales y hacer proyecciones.
+
+## 4. Otras visualizaciones:
+
+Aquí les dejo algunos plots con los que pueden trabajar al momento de publicar. Pero creo que las visualizaciones de Felix son aún mejores.
+
+```{r}
+freq_histogram <- function(type) {
+  if(missing(type)) {
+    input <- df$distance
+    text <- paste("Distance (n) of all structures")
+  } else {
+    input <- df$distance[df$structure==type]
+    text <- paste("Distance (n) of structure", type)
+  }
+  hist(input,
+       col = "green",
+       breaks = seq(0, length(input), by = 5),
+       freq = TRUE,
+       xlab = text,
+       main=NULL)
+}
+
+par(mfrow=c(2,2))
+freq_histogram()
+freq_histogram("overt connective")
+freq_histogram("juxtaposition")
+freq_histogram("elliptical")
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(df, aes(x = distance, y = structure)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Relationship between Distance and Structure")
+```
