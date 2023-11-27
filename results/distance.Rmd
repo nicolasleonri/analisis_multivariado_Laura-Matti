@@ -1,0 +1,162 @@
+---
+title: "Title"
+author: "Felix Golcher"
+date: "`r format(Sys.time(), '%d %B, %Y %H:%M')`"
+bibliography:
+  - packages.bib
+_nocite: '@*'
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    toc_depth: 6
+    number_sections: true
+    fig_caption: yes
+    table_caption: yes
+    df_print: "paged"
+---
+
+
+
+```{r, include=FALSE, cache=F}
+knitr::opts_chunk$set(cache=T,
+                      autodep = T,
+                      warning = F,
+                      message = F)
+local({
+  src_old <- knitr::knit_hooks$get("source")  # save the old hook
+  lbl <- function(x, options, old){ # show chunk label in outptu
+    lbl <- paste0('<div class="tagit">',options$label,'</div>')
+    paste(lbl,
+          old(x, options),
+          collapse="\n")
+  }
+  knitr::knit_hooks$set(source = function(x, options) {
+    lbl(x, options, src_old)
+  })
+  knitr::opts_hooks$set(fig.cap = function(options){
+    options$echo = F ## don't show code of figures if fig.cap is set.
+    options
+  })
+  knitr::knit_hooks$set(fig.cap = function(before, options, envir){
+    # label figures with the code block label as well.
+    lbl <- paste0('<div class="tagfig">',options$label,'</div>')
+    if(!before & options$eval & knitr::opts_chunk$get("eval"))
+      return(lbl)
+    })
+})
+```
+
+```{r packages, include=FALSE, cache=FALSE}
+basepacks <- .packages()
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)
+knitr::write_bib(.packages(), "packages.bib")
+```
+
+# load data
+
+```{r load}
+read_excel("distance.dataset.xlsx") %>% 
+  mutate(structure = gsub("\\r\\n","",structure),
+         participant = paste0("S",participant))->dta
+```
+
+# some figures
+
+```{r f1, fig.cap="A very long tail. And a very huge peak at 0."}
+(dta %>% 
+  ggplot(aes(distance))+
+  geom_histogram(binwidth = 1) -> gg1)
+```
+
+```{r f2, fig.cap="We could say, the distribution is bimodal"}
+(dta %>% 
+  ggplot(aes(distance+1))+
+  geom_histogram(binwidth = .11)+
+  scale_x_log10() -> gg2)
+```
+
+```{r f3, fig.cap="We That has to do with the higher distances getting closer to each other, but it's nevertheless real."}
+(dta %>% 
+  ggplot(aes(distance+1))+
+  geom_histogram(binwidth = .02)+
+  scale_x_log10() -> gg3)
+```
+
+To me this suggests to maybe do it in two steps: Logistic regression on the decision if distance is below, say, 8. And separately regression for the distance if distance is above that threshold.
+
+```{r f4, fig.cap="Red: without distance 0. Green: With distance 0."}
+cls <- brewer.pal(9,"Set1")
+dta %>% 
+  ggplot(aes(structure, distance+1))+
+  geom_jitter(width=.2, alpha=.5)+
+  stat_summary(fun.data = mean_cl_boot, col=cls[1],
+               data = function(dtx)filter(dtx, distance>0))+
+  stat_summary(fun.data = mean_cl_boot, col=cls[3])+
+  scale_y_log10()+
+  theme_bw()
+```
+
+The situation could not be much clearer. There will at most be marginal differences between juxta and overt and an obvious difference of these two compared with elliptical. Actually, you don't need statistics here.
+
+```{r f5, fig.cap="Of course there are differences between participants. The lower row of points are the 0 distances. In this case, the dotsize stands for the number of data points."}
+dta %>% 
+  ggplot(aes(participant, 
+             distance, 
+             col=structure))+
+  geom_count(data = ~ filter(.x,distance == 0),
+             aes(y = exp(as.numeric(as.factor(structure))*.1-1)))+
+  stat_summary(fun.data=mean_cl_boot, 
+               position = position_dodge(width=.5))+
+  scale_y_log10()+
+  scale_x_discrete(guide = "none")+
+  theme_bw()
+```
+
+You could have a look if these interpersonal differences mean something to you.
+
+```{r f6, fig.cap="Of course, different ppl like different constructions!"}
+dta %>% 
+  mutate(dummy = as.factor(1:n())) %>% 
+  ggplot(aes(participant, fill=structure, color=dummy))+
+  geom_bar(position = position_fill(), linewidth=.4)+
+  scale_color_manual(values=rep("black",1000))+
+  guides(color="none", x="none")
+```
+
+```{r f7, fig.cap="This is much more extreme for different questions elicitating different structures."}
+dta %>% 
+  mutate(dummy = as.factor(1:n())) %>% 
+  ggplot(aes(question, fill=structure, color=dummy))+
+  geom_bar(position = position_fill(), linewidth=.4)+
+  scale_color_manual(values=rep("black",1000))+
+  guides(color="none", x="none")
+```
+
+# loaded packages
+
+```{r, results='asis', echo=FALSE, cache=FALSE}
+pck <- sort(setdiff(.packages(), basepacks))
+cat(paste0("* ",pck," [@R-", pck,"]", collapse = "\n"))
+```
+
+```{css, echo=FALSE}
+.tagit {
+  display: inline-block;
+  position: absolute;
+  left: -7em;
+  color: #6c89ea;
+}
+.tagfig {
+  display: inline-block;
+  position: relative;
+  left: -7em;
+  color: #cb798f;
+  top: -2em;
+}
+```
+
+
+# References
